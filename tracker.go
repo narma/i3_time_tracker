@@ -10,11 +10,10 @@ import (
 
 type (
 	Tracker struct {
-		options        *mainOptions
-		db             redis.Client
-		is_counting    bool
-		is_going_relax bool
-		started        time.Time
+		options     *mainOptions
+		db          redis.Client
+		is_counting bool
+		started     time.Time
 	}
 
 	mainOptions struct {
@@ -25,8 +24,7 @@ type (
 func NewMainOptions() *mainOptions {
 	return &mainOptions{
 		// Default almost all, except 9, 10
-		WorkWorkspaces:      set.NewSetFromSlice([]interface{}{"1", "2", "3", "4", "5", "6", "7", "8"}),
-		AllowedRelaxMinutes: 3,
+		WorkWorkspaces: set.NewSetFromSlice([]interface{}{"1", "2", "3", "4", "5", "6", "7", "8"}),
 	}
 }
 
@@ -35,7 +33,7 @@ func NewTracker(options *mainOptions) *Tracker {
 	log.Printf("I'm working on %s\n", t.options.WorkWorkspaces)
 	c := time.Tick(1 * time.Minute)
 	go func() {
-		for now := range c {
+		for _ = range c {
 			t.db.Incrby("tracker:elapsed", 60)
 			t.started.Add(60 * time.Second)
 		}
@@ -53,7 +51,7 @@ func ex_or(a bool, b bool) bool {
 }
 
 func (t *Tracker) OnWorkspaceChange(wspace string) {
-	state_changed := ex_or(t.IsHardWork(wspace), t.is_counting || !t.is_going_relax)
+	state_changed := ex_or(t.IsHardWork(wspace), t.is_counting)
 	if state_changed == false {
 		return
 	}
@@ -66,15 +64,12 @@ func (t *Tracker) OnWorkspaceChange(wspace string) {
 }
 
 func (t *Tracker) Stop() {
-	t.is_going_relax = time.AfterFunc(t.options.AllowedRelaxMinutes*time.Minute, func() {
-		log.Printf("Stop work\n")
-		t.is_counting = false
-		elapsed := time.Since(t.started)
+	log.Printf("Stop work\n")
+	t.is_counting = false
+	elapsed := time.Since(t.started)
 
-		t.db.Rpush("tracker:stopped_at", []byte(time.Now().String()))
-		t.db.Incrby("tracker:elapsed", int64(elapsed.Seconds()-t.options.AllowedRelaxMinutes*60))
-	})
-
+	t.db.Rpush("tracker:stopped_at", []byte(time.Now().String()))
+	t.db.Incrby("tracker:elapsed", int64(elapsed.Seconds()))
 }
 
 func (t *Tracker) Start() {
