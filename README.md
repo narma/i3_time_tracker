@@ -1,26 +1,14 @@
-Трекер отработанного времени
-============================
+# Worktime tracker for i3wm
 
-Принцип работы
---------------
-Рабочие столы разделяются на рабочие и нет, соответственно работы трекается только на заданных рабочих столах. 
+## Setup and usage
 
-Есть понятие отдыха и отвлечения.
+```sh
+go build -a
+./i3_time_tracker 1 2 3 4
+```
+## How it works
 
-За определенный период организму нужно немного отдохнуть, это считается как часть работы и трекается в системе.
+Workspaces are divided to those which are used for work and those which aren't.
+Time is tracking only when chosen workspaces are active.
 
-Так же есть небольшие интервалы отвлечения, которые также трекаются, если они достаточно короткие.
-
-
-Заряд отдыха
-------------
-  - За каждый период $work_chunk_period полезно отдыхать $relax_period
-  - $relax_period не тратиться из $digress_allowed
-  - Но после истечения $digress_allowed, нужно потратить время из
-      a) $relax_period
-      b) $work_period
-
-Заряд отвлечения
-----------------
-  - Максимум $digress_allowed 
-  - Восстанавливается со скоростью $digress_restore per $digress_restore_period
+Currently results synchronize with redis. It's up to you how to use them.
