@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"os/exec"
 	"strconv"
@@ -73,21 +74,18 @@ func (c *Conn) sendMessage(Type uint32, payload ...byte) (err error) {
 	if payload == nil {
 		payload = []byte{}
 	}
-	var end = binary.LittleEndian
-	buf := new(bytes.Buffer)
-	_, err = buf.Write(magicStringBytes)
-	if err != nil {
-		return
+	buf := bytes.NewBuffer(magicStringBytes)
+
+	write := func(buf io.Writer, data interface{}) {
+		if err != nil {
+			return
+		}
+		binary.Write(buf, binary.LittleEndian, data)
 	}
-	err = binary.Write(buf, end, uint32(len(payload)))
-	if err != nil {
-		return
-	}
-	err = binary.Write(buf, end, Type)
-	if err != nil {
-		return
-	}
-	err = binary.Write(buf, end, payload)
+
+	write(buf, uint32(len(payload)))
+	write(buf, Type)
+	write(buf, payload)
 	if err != nil {
 		return
 	}
@@ -167,6 +165,11 @@ func (c *Conn) Outputs() (o []Output, err error) {
 }
 
 func (c *Conn) handlePayload(j *json.RawMessage, typ interface{}) (err error) {
+	if false {
+		s, _ := j.MarshalJSON()
+		log.Println("[RAW JSON]:", string(s))
+	}
+
 	var outchan chan *json.RawMessage
 	switch v := typ.(type) {
 	case ReplyType:
@@ -232,13 +235,13 @@ func (c *Conn) handlePayload(j *json.RawMessage, typ interface{}) (err error) {
 				c.Event.Mode(ch.Change)
 			}
 		case Event_Window:
-			var we windowEvent
+			var we WindowEvent
 			err = json.Unmarshal(*j, &we)
 			if err != nil {
 				return
 			}
 			if c.Event.Window != nil {
-				c.Event.Window(we.Container)
+				c.Event.Window(we)
 			}
 
 		default:

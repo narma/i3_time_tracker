@@ -50,7 +50,8 @@ type (
 			}
 			Output func()
 			Mode   func(modeName string)
-			Window func(parent TreeNode)
+			//Window func(parent TreeNode)
+			Window func(ev WindowEvent)
 		}
 		conn io.ReadWriteCloser
 		command,
@@ -82,6 +83,12 @@ type (
 		Rect    Rect
 		Output  string
 	}
+	WindowProperties struct {
+		Class      string
+		Instance   string
+		WindowRole string `json:"window_role"`
+		Title      string
+	}
 	TreeNode struct {
 		ID         int
 		Name       string
@@ -92,6 +99,7 @@ type (
 		WindowRect Rect `json:"window_rect"`
 		Geometry   Rect
 		Window     int
+		Properties WindowProperties `json:"window_properties"`
 		Urgent,
 		Focused bool
 		Nodes []TreeNode
@@ -124,7 +132,8 @@ type (
 		Old,
 		Current *TreeNode
 	}
-	windowEvent struct {
+	WindowEvent struct {
+		Change    string
 		Container TreeNode
 	}
 )
