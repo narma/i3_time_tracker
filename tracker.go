@@ -1,48 +1,69 @@
 package main
 
 import (
-	set "github.com/deckarep/golang-set"
-	"github.com/hoisie/redis"
+	//	set "github.com/deckarep/golang-set"
 	"log"
 	//"strconv"
+	"sync"
 	"time"
 )
 
 type (
-	Tracker struct {
-		options     *mainOptions
-		db          redis.Client
-		is_counting bool
-		started     time.Time
+	entity struct {
+		sync.RWMutex
+		entries map[string]time.Duration
+		started time.Time
+		current string
 	}
-
-	mainOptions struct {
-		WorkWorkspaces set.Set
+	Tracker struct {
+		workspaces *entity
+		windows    *entity
 	}
 )
 
-func NewMainOptions() *mainOptions {
-	return &mainOptions{
-		// Default almost all, except 9, 10
-		WorkWorkspaces: set.NewSetFromSlice([]interface{}{"1", "2", "3", "4", "5", "6", "7", "8"}),
+func newTrackerEntity(name string) *entity {
+	e := &entity{
+		started: time.Now(),
+		current: name,
+		entries: make(map[string]time.Duration),
 	}
-}
 
-func NewTracker(options *mainOptions) *Tracker {
-	t := &Tracker{options: options}
-	log.Printf("I'm working on %s\n", t.options.WorkWorkspaces)
-	c := time.Tick(1 * time.Minute)
+	// sync every 1 sec
+	c := time.Tick(1 * time.Second)
 	go func() {
 		for _ = range c {
-			t.db.Incrby("tracker:elapsed", 60)
-			t.started.Add(60 * time.Second)
+			e.RLock()
+			if time.Since(e.started) > time.Second {
+				e.RUnlock()
+				e.syncWL()
+			} else {
+				e.RUnlock()
+			}
+
 		}
 	}()
-	return t
+	return e
 }
 
-func (t *Tracker) IsHardWork(wspace string) bool {
-	return t.options.WorkWorkspaces.Contains(wspace)
+func NewTracker(workspace string, window string) *Tracker {
+	t := &Tracker{}
+	t.windows = newTrackerEntity(window)
+	t.workspaces = newTrackerEntity(workspace)
+
+	c := time.Tick(60 * time.Second)
+	go func() {
+		for _ = range c {
+			t.windows.RLock()
+			log.Println("Windows stat", t.windows.entries)
+			t.windows.RUnlock()
+
+			t.workspaces.RLock()
+			log.Println("Workspace stat", t.workspaces.entries)
+			t.workspaces.RUnlock()
+		}
+	}()
+
+	return t
 }
 
 // exclusive or
@@ -51,36 +72,49 @@ func ex_or(a bool, b bool) bool {
 }
 
 func (t *Tracker) OnWorkspaceChange(wspace string) {
-	state_changed := ex_or(t.IsHardWork(wspace), t.is_counting)
-	if state_changed == false {
+	if wspace == t.workspaces.current {
 		return
 	}
+	t.workspaces.changed(wspace)
+}
 
-	if t.is_counting {
-		t.Stop()
-	} else {
-		t.Start()
+func (t *Tracker) OnWindowChange(class string) {
+	if class == t.windows.current {
+		return
 	}
+	t.windows.changed(class)
 }
 
-func (t *Tracker) Stop() {
-	log.Printf("Stop work\n")
-	t.is_counting = false
-	elapsed := time.Since(t.started)
-
-	t.db.Rpush("tracker:stopped_at", []byte(time.Now().String()))
-	t.db.Incrby("tracker:elapsed", int64(elapsed.Seconds()))
+func (e *entity) changed(name string) {
+	if len(e.current) == 0 {
+		return
+	}
+	e.Lock()
+	defer e.Unlock()
+	e.sync()
+	e.current = name
 }
 
-func (t *Tracker) Start() {
-	log.Printf("Start work\n")
-	t.is_counting = true
-	t.started = time.Now()
-	t.db.Rpush("tracker:started_at", []byte(t.started.String()))
+func (t *Tracker) Flush() {
+
 }
 
-func (t *Tracker) AtExit() {
-	if t.is_counting {
-		t.Stop()
+func (e *entity) sync() {
+	elapsed := time.Since(e.started)
+	e.entries[e.current] += elapsed
+	e.started = time.Now()
+}
+
+func (e *entity) syncWL() {
+	e.Lock()
+	defer e.Unlock()
+	e.sync()
+}
+
+func (t *Tracker) Sync() {
+	t.workspaces.syncWL()
+	t.windows.syncWL()
+	if false {
+		log.Println("false")
 	}
 }

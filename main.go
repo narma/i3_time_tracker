@@ -3,7 +3,7 @@ package main
 import (
 	i3lib "./i3"
 	"flag"
-	//"log"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -22,17 +22,44 @@ func currentWorkspaceName(i3 *i3lib.Conn) (current_workspace string) {
 	for _, v := range ws {
 		if v.Focused {
 			current_workspace = v.Name
+			return
 		}
 	}
 	return
 }
 
+func find_focused(root i3lib.TreeNode) (w *i3lib.TreeNode) {
+	for _, w := range root.Nodes {
+		if w.Focused {
+			return &w
+		}
+	}
+
+	for _, w := range root.Nodes {
+		finded := find_focused(w)
+		if finded != nil {
+			return finded
+		}
+	}
+	return
+}
+
+func currentWindowClass(i3 *i3lib.Conn) string {
+	root, err := i3.Tree()
+	p(err)
+	//var w i3lib.TreeNode
+	w := find_focused(root)
+	if w == nil {
+		return ""
+	}
+
+	return w.Properties.Class
+}
+
 func main() {
 	flag.Parse()
 	i3, err := i3lib.Attach()
-	if err != nil {
-		panic(err)
-	}
+	p(err)
 
 	go func() {
 		panic(i3.Listen())
@@ -46,26 +73,25 @@ func main() {
 	}()
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 
-	options := NewMainOptions()
+	tracker := NewTracker(currentWorkspaceName(i3), currentWindowClass(i3))
 
-	args := flag.Args()
-	if len(args) > 0 {
-		options.WorkWorkspaces.Clear()
-		for _, v := range flag.Args() {
-			options.WorkWorkspaces.Add(v)
-		}
-	}
-
-	tracker := NewTracker(options)
-
-	tracker.OnWorkspaceChange(currentWorkspaceName(i3))
 	install_subscribes(tracker, i3)
-	defer tracker.AtExit()
+
+	defer tracker.Flush()
+	defer tracker.Sync()
 	<-exitChan
+	log.Println("bye")
 }
 
 func install_subscribes(t *Tracker, i3 *i3lib.Conn) {
-	i3.Subscribe("workspace")
+	i3.Subscribe("workspace", "window")
+	i3.Event.Window = func(ev i3lib.WindowEvent) {
+		what := ev.Container.Properties.Class
+		if len(what) == 0 {
+			what = ev.Container.Properties.Instance
+		}
+		t.OnWindowChange(what)
+	}
 	i3.Event.Workspace.Focus = func(current *i3lib.TreeNode, old *i3lib.TreeNode) {
 		t.OnWorkspaceChange(current.Name)
 	}
